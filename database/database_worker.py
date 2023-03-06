@@ -1,13 +1,13 @@
 import logging
 from abc import ABC, abstractmethod
 from types import TracebackType
-from typing import Self, Callable
+from typing import Self, Callable, Any, Sequence
 
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, select, update, Row, RowMapping, delete
 from sqlalchemy.dialects.postgresql import Insert
 from sqlalchemy.orm import Session
 
-from database.db_models import User, Object
+from database.db_models import User, Object, AccessMark
 
 _log = logging.getLogger(__name__)
 engine = create_engine('postgresql+psycopg2://postgres:post@localhost/mbks_lab1')
@@ -17,11 +17,11 @@ class Storage(ABC):
     def __init__(self) -> None:
         self._connected = False
 
-    def __aenter__(self) -> Self:
+    def __enter__(self) -> Self:
         self.connect()
         return self
 
-    def __aexit__(
+    def __exit__(
             self,
             exc_type: type[BaseException] | None,
             exc_val: BaseException | None,
@@ -56,7 +56,7 @@ class Storage(ABC):
         pass
 
     @abstractmethod
-    def get_user(self, u_name: str) -> str:
+    def get_user(self, u_name: str) -> User:
         pass
 
     @abstractmethod
@@ -64,7 +64,7 @@ class Storage(ABC):
         pass
 
     @abstractmethod
-    def object_exist(self, o_name: str) -> bool:
+    def object_exists(self, o_name: str) -> bool:
         pass
 
     @abstractmethod
@@ -76,9 +76,20 @@ class Storage(ABC):
         pass
 
     @abstractmethod
-    def get_object(self, o_name) -> str:
+    def get_object(self, o_name: str) -> Object:
         pass
 
+    @abstractmethod
+    def get_all_objects(self) -> Sequence[Row | RowMapping | list[Object]]:
+        pass
+
+    @abstractmethod
+    def get_object_access_level(self, o_name: str) -> str:
+        pass
+
+    @abstractmethod
+    def delete_object(self, o_name: str) -> None:
+        pass
 
 class SQLAlchemyStorage(Storage):
     def __init__(self, session_factory: Callable[[], Session]) -> None:
@@ -130,7 +141,7 @@ class SQLAlchemyStorage(Storage):
         )
         return result.scalar_one_or_none() is not None
 
-    def get_user(self, u_name: str) -> str:
+    def get_user(self, u_name: str) -> User:
         if self._session is None:
             raise AssertionError("Storage is not connected")
         result = self._session.execute(
@@ -152,7 +163,7 @@ class SQLAlchemyStorage(Storage):
             )
         )
 
-    def object_exist(self, o_name: str) -> bool:
+    def object_exists(self, o_name: str) -> bool:
         if self._session is None:
             raise AssertionError("Storage is not connected")
         result = self._session.execute(
@@ -184,7 +195,7 @@ class SQLAlchemyStorage(Storage):
             .where(Object.name == o_name)
         )
 
-    def get_object(self, o_name) -> str:
+    def get_object(self, o_name) -> Object:
         if self._session is None:
             raise AssertionError("Storage is not connected")
         result = self._session.execute(
@@ -192,3 +203,30 @@ class SQLAlchemyStorage(Storage):
             .where(Object.name == o_name)
         )
         return result.scalar_one_or_none()
+
+    def get_all_objects(self) -> Sequence[Row | RowMapping | list[Object]]:
+        if self._session is None:
+            raise AssertionError("Storage is not connected")
+        result = self._session.execute(
+            select(Object)
+            .join(AccessMark, Object.secure_mark == AccessMark.id)
+            .group_by(Object.id)
+        )
+        return result.scalars().all()
+
+    def get_object_access_level(self, o_name) -> str:
+        if self._session is None:
+            raise AssertionError("Storage is not connected")
+        result = self._session.execute(
+            select(Object.secure_mark)
+            .where(Object.name == o_name)
+        )
+        return result.scalar_one_or_none()
+
+    def delete_object(self, o_name: str) -> None:
+        if self._session is None:
+            raise AssertionError("Storage is not connected")
+        self._session.execute(
+            delete(Object)
+            .where(Object.name == o_name)
+        )
