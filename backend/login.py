@@ -12,7 +12,21 @@
         -Muerta:
             -Added in the game
         -Axe:
-            -Now Axe have implemented Blink Dagger and it can't be toggled down by getting hit
+            -Now Axe have implemented Blink Dagger, it can't be toggled down by getting hit
 """
+from backend.config import storage
 
 
+def login():
+    name = input('Введите имя пользователя: \n')
+    flag = False
+    while not flag:
+        with storage:
+            flag = storage.user_exists(u_name=name)
+        if not flag:
+            print(f"Не удалось войти под указанным пользователем {name}")
+            continue
+        else:
+            print(f"Вы успешно вошли под пользователем {name}")
+            break
+    # тут что делать когда вошли в систему
